@@ -1,0 +1,47 @@
+# ==========================================
+# Variables de entorno y secretos
+# ==========================================
+.env
+.env.*
+!.env.example
+*.env
+*.local
+
+# ==========================================
+# Dependencias y compilados
+# ==========================================
+node_modules/
+*/node_modules/
+backend/node_modules/
+frontend/node_modules/
+dist/
+build/
+backend/dist/
+frontend/dist/
+.expo/
+frontend/.expo/
+web-build/
+.next/
+out/
+
+# ==========================================
+# Logs y temporales
+# ==========================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ==========================================
+# IDEs y SO
+# ==========================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

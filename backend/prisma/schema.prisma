@@ -1,0 +1,284 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// ENUMS
+// -----------------------------------------------------------------------------
+enum TipoDocumento {
+  CEDULA
+  DNI
+  PASAPORTE
+  CIP // Carnet de Identidad Policial
+}
+
+enum EstadoUsuario {
+  ACTIVO
+  INACTIVO
+  SUSPENDIDO
+  BANEADO
+}
+
+enum TipoAlerta {
+  PANICO
+  MEDICA
+  SEGURIDAD_VIOLENCIA
+  SOSPECHA_DELITO
+  TRANSITO
+  TRANSPORTE
+  OTRO
+}
+
+enum EstadoAlerta {
+  EMITIDA
+  RECIBIDA
+  EN_ATENCION
+  RESUELTA
+  FALSA_ALARMA
+  CANCELADA
+}
+
+// -----------------------------------------------------------------------------
+// 1. PERSONA (Datos Civiles / Identidad)
+// -----------------------------------------------------------------------------
+model Persona {
+  id              String        @id @default(uuid())
+  nombres         String
+  apellidos       String
+  tipoDocumento   TipoDocumento @default(CEDULA) @map("tipo_documento")
+  numeroDocumento String        @unique @map("numero_documento")
+  telefono        String?
+  direccion       String?
+  fechaNacimiento DateTime?     @map("fecha_nacimiento")
+
+  usuario         Usuario?
+
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@map("personas")
+}
+
+// -----------------------------------------------------------------------------
+// 2. USUARIO (Credenciales y Seguridad)
+// -----------------------------------------------------------------------------
+model Usuario {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  passwordHash String        @map("password_hash")
+  estado       EstadoUsuario @default(ACTIVO)
+  ultimoAcceso DateTime?     @map("ultimo_acceso")
+
+  personaId    String        @unique @map("persona_id")
+  persona      Persona       @relation(fields: [personaId], references: [id], onDelete: Cascade)
+
+  // Sistema Oculto de Validez y Confianza (-10 o menor = Baneo Automático)
+  reputacionScore      Int           @default(0) @map("reputacion_score")
+  alertasEmitidasCount Int           @default(0) @map("alertas_emitidas_count")
+  alertasFalsasCount   Int           @default(0) @map("alertas_falsas_count")
+
+  roles            UsuarioRol[]
+  dispositivos     Dispositivo[]
+  alertasEmitidas  Alerta[]        @relation("AlertasEmitidas")
+  alertasAtendidas Alerta[]        @relation("AlertasAtendidas")
+  accionesAlertas  AlertaAccion[]
+
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  @@map("usuarios")
+}
+
+// -----------------------------------------------------------------------------
+// 3. RBAC: MÓDULOS, PERMISOS Y ROLES
+// -----------------------------------------------------------------------------
+model Modulo {
+  id          String    @id @default(uuid())
+  codigo      String    @unique
+  nombre      String
+  descripcion String?
+  permisos    Permiso[]
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("modulos")
+}
+
+model Permiso {
+  id          String       @id @default(uuid())
+  codigo      String       @unique
+  nombre      String
+  descripcion String?
+
+  moduloId    String       @map("modulo_id")
+  modulo      Modulo       @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
+  roles       RolPermiso[]
+
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  @@map("permisos")
+}
+
+model Rol {
+  id          String        @id @default(uuid())
+  codigo      String        @unique
+  nombre      String
+  descripcion String?
+
+  usuarios    UsuarioRol[]
+  permisos    RolPermiso[]
+
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@map("roles")
+}
+
+model UsuarioRol {
+  usuarioId  String   @map("usuario_id")
+  rolId      String   @map("rol_id")
+  asignadoEn DateTime @default(now()) @map("asignado_en")
+
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  rol        Rol      @relation(fields: [rolId], references: [id], onDelete: Cascade)
+
+  @@id([usuarioId, rolId])
+  @@map("usuarios_roles")
+}
+
+model RolPermiso {
+  rolId     String   @map("rol_id")
+  permisoId String   @map("permiso_id")
+
+  rol       Rol      @relation(fields: [rolId], references: [id], onDelete: Cascade)
+  permiso   Permiso  @relation(fields: [permisoId], references: [id], onDelete: Cascade)
+
+  @@id([rolId, permisoId])
+  @@map("roles_permisos")
+}
+
+// -----------------------------------------------------------------------------
+// 4. DISPOSITIVOS Y BANEOS POR IP / HARDWARE
+// -----------------------------------------------------------------------------
+model Dispositivo {
+  id            String    @id @default(uuid())
+  usuarioId     String    @map("usuario_id")
+  deviceId      String    @map("device_id")
+  plataforma    String
+  modelo        String?
+  versionSo     String?   @map("version_so")
+  pushToken     String?   @map("push_token")
+  ipRegistro    String?   @map("ip_registro")
+  ultimaIp      String?   @map("ultima_ip")
+  estaBloqueado Boolean   @default(false) @map("esta_bloqueado")
+  motivoBloqueo String?   @map("motivo_bloqueo")
+
+  usuario       Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@unique([usuarioId, deviceId])
+  @@map("dispositivos")
+}
+
+model IpBaneada {
+  id           String    @id @default(uuid())
+  ip           String    @unique
+  motivo       String
+  baneadoHasta DateTime? @map("baneado_hasta")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@map("ips_baneadas")
+}
+
+// -----------------------------------------------------------------------------
+// 5. CATEGORÍAS Y MOTIVOS DE AYUDA COMUNITARIA DINÁMICOS
+// -----------------------------------------------------------------------------
+model CategoriaIncidente {
+  id          String            @id @default(uuid())
+  codigo      String            @unique // SEGURIDAD, TRANSITO, TRANSPORTE
+  nombre      String            // Seguridad y Alerta Vecinal, Tránsito y Vías, Transporte y Buses
+  descripcion String?
+  colorHex    String            // #DA291C, #EA580C, #D97706
+  orden       Int               @default(1)
+  activo      Boolean           @default(true)
+  
+  motivos     MotivoIncidente[]
+  alertas     Alerta[]
+
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  @@map("categorias_incidentes")
+}
+
+model MotivoIncidente {
+  id               String             @id @default(uuid())
+  categoriaId      String             @map("categoria_id")
+  codigo           String             @unique
+  nombre           String             // Robo a transeúnte, Bus averiado, Semáforo apagado
+  campoExtraLabel  String?            @map("campo_extra_label") // ej: "Línea / Cooperativa de bus"
+  orden            Int                @default(1)
+  activo           Boolean            @default(true)
+  
+  categoria        CategoriaIncidente @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  alertas          Alerta[]
+
+  createdAt        DateTime           @default(now()) @map("created_at")
+
+  @@map("motivos_incidentes")
+}
+
+// -----------------------------------------------------------------------------
+// 6. ALERTAS Y ACCIONES
+// -----------------------------------------------------------------------------
+model Alerta {
+  id                  String              @id @default(uuid())
+  emisorId            String              @map("emisor_id")
+  atendidoPorId       String?             @map("atendido_por_id")
+  categoriaId         String?             @map("categoria_id")
+  motivoId            String?             @map("motivo_id")
+  tipo                TipoAlerta          @default(PANICO)
+  estado              EstadoAlerta        @default(EMITIDA)
+  latitud             Float
+  longitud            Float
+  direccionReferencia String?             @map("direccion_referencia")
+  descripcion         String?
+  fotoUrl             String?             @map("foto_url")
+  campoExtraValor     String?             @map("campo_extra_valor") // ej: "Línea 14 - Disco 22"
+  prioridadCalculada  Int                 @default(0) @map("prioridad_calculada")
+  ipOrigen            String?             @map("ip_origen")
+  deviceIdOrigen      String?             @map("device_id_origen")
+
+  emisor              Usuario             @relation("AlertasEmitidas", fields: [emisorId], references: [id], onDelete: Cascade)
+  atendidoPor         Usuario?            @relation("AlertasAtendidas", fields: [atendidoPorId], references: [id], onDelete: SetNull)
+  categoria           CategoriaIncidente? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  motivo              MotivoIncidente?    @relation(fields: [motivoId], references: [id], onDelete: SetNull)
+  acciones            AlertaAccion[]
+
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  @@map("alertas")
+}
+
+model AlertaAccion {
+  id           String       @id @default(uuid())
+  alertaId     String       @map("alerta_id")
+  usuarioId    String       @map("usuario_id")
+  estadoPrevio EstadoAlerta? @map("estado_previo")
+  estadoNuevo  EstadoAlerta  @map("estado_nuevo")
+  comentario   String?
+  
+  alerta       Alerta       @relation(fields: [alertaId], references: [id], onDelete: Cascade)
+  usuario      Usuario      @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  @@map("alertas_acciones")
+}
