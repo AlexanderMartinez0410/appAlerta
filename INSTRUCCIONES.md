@@ -1,104 +1,94 @@
-# 🚀 Guía de Compilación, Ejecución y Despliegue con Docker y Prisma ORM
+# Manual de Compilación, Ejecución y Gestión de Base de Datos
 
-Esta guía detalla todo lo necesario para compilar y ejecutar **App Alerta** con Docker (Backend NestJS con **Prisma ORM** + Frontend Expo Web + Base de Datos PostgreSQL con Clean Architecture).
-
----
-
-## 📋 1. Requisitos Previos
-
-1. **Tener Docker Desktop instalado y corriendo en Windows:**
-   - Asegúrate de que el icono de Docker en la barra de tareas de Windows indique *"Engine running"*.
-2. **Variables de entorno:**
-   - El archivo `.env.dev` ya está preparado con `DATABASE_URL` y puerto `5433` para evitar conflictos con PostgreSQL local.
+Esta guía detalla los pasos para compilar, levantar y gestionar **App Alerta** mediante Docker y herramientas locales.
 
 ---
 
-## 🛠️ 2. Compilación y Ejecución en Modo Desarrollo (Hot-Reload)
+## 1. Verificación de Entorno
 
-Cualquier cambio en el código de **Frontend** o **Backend** se actualiza en vivo sin reiniciar contenedores.
+Asegúrese de tener **Docker Desktop** en ejecución.
 
-### Paso 1: Limpiar contenedores previos
+Si los puertos locales estuvieran en conflicto:
+- El puerto expuesto de PostgreSQL en el host es `5433` (mapeado internamente al `5432` del contenedor de base de datos) para evitar choques con servicios PostgreSQL locales existentes.
+- El backend corre en el puerto `3000`.
+- El frontend corre en el puerto `8081`.
+
+---
+
+## 2. Compilación y Despliegue con Docker
+
+### Modo Desarrollo (Hot-Reload)
+
+Permite que cualquier cambio en los archivos de TypeScript en `frontend/` o `backend/` se refleje inmediatamente.
+
 ```powershell
+# Detener contenedores previos si existen
 docker compose down
-```
 
-### Paso 2: Compilar y levantar
-```powershell
+# Compilar e iniciar los servicios
 docker compose --env-file .env.dev up --build
 ```
 
-### URLs de Acceso:
-- **Frontend:** [http://localhost:8081](http://localhost:8081)
-- **Backend API:** [http://localhost:3000/help](http://localhost:3000/help)
-- **PostgreSQL (Host):** `localhost:5433`
+### Modo Producción
 
----
-
-## 💎 3. ¿Cómo modificar la Base de Datos desde Código con Prisma ORM?
-
-El proyecto utiliza **Prisma ORM** en la capa de infraestructura del Backend.
-
-### A. Modificar o agregar tablas:
-Edita el archivo [`backend/prisma/schema.prisma`](backend/prisma/schema.prisma):
-```prisma
-model Help {
-  id    Int    @id @default(autoincrement())
-  texto String
-
-  @@map("help")
-}
-
-// Ejemplo: Puedes agregar nuevos modelos fácilmente:
-// model Usuario {
-//   id        Int      @id @default(autoincrement())
-//   nombre    String
-//   email     String   @unique
-//   createdAt DateTime @default(now())
-// }
-```
-
-### B. Aplicar cambios y generar tipos de TypeScript:
-Desde la carpeta `backend`:
-```powershell
-# 1. Regenerar el cliente de TypeScript tipado
-npx prisma generate
-
-# 2. Si deseas crear una migración en la BD:
-npx prisma migrate dev --name nuevo_modelo
-```
-
-### C. Visualizador visual de base de datos (Prisma Studio):
-Para ver y editar los datos de la base de datos visualmente en tu navegador:
-```powershell
-cd backend
-npx prisma studio
-```
-*(Abre automáticamente una interfaz web en `http://localhost:5555`)*.
-
----
-
-## 📦 4. Compilación y Ejecución en Modo Producción
-
-En este modo se generan builds optimizados (Nginx + Node producción):
+Genera los builds optimizados (Nginx para el frontend y bundle compilado de Node.js para el backend):
 
 ```powershell
+# Iniciar en segundo plano
 docker compose --env-file .env.prod -f docker-compose.prod.yml up --build -d
-```
 
-### Ver logs:
-```powershell
+# Ver logs en vivo
 docker compose -f docker-compose.prod.yml logs -f
-```
 
-### Detener:
-```powershell
+# Detener servicios
 docker compose -f docker-compose.prod.yml down
 ```
 
 ---
 
-## ⚠️ 5. Solución de Problemas Comunes
+## 3. Administración de la Base de Datos con Prisma ORM
 
-- **Puerto ocupado:** El puerto de PostgreSQL hacia tu máquina host es `5433` para evitar conflicto con instalaciones locales en `5432`.
-- **Nuevas dependencias:** Si agregas librerías a `package.json`, reconstruye con `docker compose --env-file .env.dev up --build`.
-- **Reinicio limpio de datos:** `docker compose down -v` y luego levantar con `up --build`.
+### Modificación del Esquema
+
+El archivo principal de modelos está en `backend/prisma/schema.prisma`.
+
+Para agregar o modificar campos:
+1. Edite `backend/prisma/schema.prisma`.
+2. Para regenerar el cliente de TypeScript tipado:
+```powershell
+cd backend
+npx prisma generate
+```
+3. Para sincronizar los cambios con la base de datos de desarrollo:
+```powershell
+npx prisma db push
+```
+
+### Poblado de Datos Iniciales (Seed)
+
+Para ejecutar la carga de usuarios y categorías:
+```powershell
+cd backend
+npx prisma db seed
+```
+
+### Explorador Visual de Base de Datos (Prisma Studio)
+
+Para abrir la interfaz gráfica de administración de datos en el navegador:
+```powershell
+cd backend
+npx prisma studio
+```
+Se abrirá automáticamente en `http://localhost:5555`.
+
+---
+
+## 4. Solución de Problemas Frecuentes
+
+1. **Error de Conexión a Base de Datos en el Host:**
+   - Asegúrese de conectarse a `localhost:5433` (y no a `5432`) si utiliza clientes externos como DBeaver o pgAdmin.
+2. **Reinicio Completo y Limpieza de Volúmenes:**
+   ```powershell
+   docker compose down -v
+   docker compose --env-file .env.dev up --build
+   ```
